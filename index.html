@@ -211,12 +211,32 @@
       UI.renderSheet();
       if (!opts.keepScroll) scrollTo({ top: 0 });
       if (changed && !opts.silent) UI.focusSheet();
-      UI.onNavigate && UI.onNavigate();
+      if (this.cur) Store.save();
     },
     next() { this.go(this.idx + 1); },
     prev() { this.go(this.idx - 1); },
     goSeq(seq, opts) { const i = this.sheets.findIndex((s) => s.seq === seq); if (i >= 0) this.go(i, opts); },
   };
+
+  /* ===== Persistencia (solo localStorage, por slug) ===== */
+  const Store = {
+    key: "mev-reader:progress:" + slug,
+    load() { try { return JSON.parse(localStorage.getItem(this.key)) || null; } catch { return null; } },
+    save() {
+      const s = Nav.cur; if (!s) return;
+      const h = document.documentElement.scrollHeight - innerHeight;
+      try { localStorage.setItem(this.key, JSON.stringify({ seq: s.seq, title: s.title, y: Math.round(scrollY), r: h > 0 ? +(scrollY / h).toFixed(4) : 0, at: Date.now() })); } catch {}
+    },
+  };
+  let saveT = 0;
+  addEventListener("scroll", () => { if (!saveT) saveT = setTimeout(() => { saveT = 0; Store.save(); }, 400); }, { passive: true });
+  addEventListener("pagehide", () => Store.save());
+  document.addEventListener("visibilitychange", () => { if (document.hidden) Store.save(); });
+  function restore(p) {
+    Nav.goSeq(p.seq, { silent: true });
+    if (!Nav.cur || Nav.cur.seq !== p.seq) return Nav.go(-1, { silent: true });
+    requestAnimationFrame(() => { const h = document.documentElement.scrollHeight - innerHeight; scrollTo({ top: p.r ? p.r * h : p.y || 0 }); });
+  }
 
   /* ===== UI ===== */
   const UI = {
@@ -248,13 +268,19 @@
       const a = $("coverActions");
       a.innerHTML = "";
       if (!Nav.sheets.length) return;
-      const b = document.createElement("button");
-      b.className = "primary"; b.textContent = "Empezar a leer"; b.onclick = () => Nav.go(0);
-      a.appendChild(b);
+      const p = Store.load(), i = p ? Nav.sheets.findIndex((s) => s.seq === p.seq) : -1;
+      const add = (txt, cls, fn, label) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; if (label) b.setAttribute("aria-label", label); b.onclick = fn; a.appendChild(b); };
+      if (i >= 0) {
+        add("Continuar leyendo", "primary", () => restore(p), "Continuar leyendo: " + (Nav.sheets[i].title || "capítulo " + (i + 1)));
+        add("Empezar desde el inicio", "", () => Nav.go(0));
+      } else add("Empezar a leer", "primary", () => Nav.go(0));
     },
     focusSheet() { const el = Nav.cur ? $("sheet") : $("ct"); el.setAttribute("tabindex", "-1"); el.focus({ preventScroll: true }); },
     buildToc() {
       const ol = $("tocl"); ol.textContent = "";
+      const li0 = document.createElement("li"), b0 = document.createElement("button");
+      b0.innerHTML = '<span class="n">·</span><span>Portada · volver al inicio</span>';
+      b0.onclick = () => { setToc(false); Nav.go(-1); }; li0.appendChild(b0); ol.appendChild(li0);
       const scenes = [...Content.scenes.values()].sort((a, b) => a.seq - b.seq);
       let i = 0;
       for (const s of scenes) {
@@ -336,7 +362,7 @@
     if (dirty) {
       Nav.sheets = buildSheets();
       UI.buildToc();
-      if (ch.initial) { UI.onReady ? UI.onReady() : Nav.go(-1, { silent: true }); }
+      if (ch.initial) { const p = Store.load(); p ? restore(p) : Nav.go(-1, { silent: true }); }
       else {
         // Conservar la hoja y la posición actuales; nunca mover al lector.
         let i = curSeq === null ? -1 : Nav.sheets.findIndex((s) => s.seq === curSeq);
