@@ -101,6 +101,24 @@
   .toast.show{display:flex}
   .toast button.go{background:var(--accent);border-color:var(--accent);color:var(--bg)}
   @media (max-width:520px){ .bar{gap:.4rem;padding:.5rem .7rem} main{padding-top:1.8rem} }
+  /* Narrador */
+  [hidden]{display:none!important}
+  .icon svg{width:1rem;height:1rem;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  #listen[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}
+  #sheet .reading{background:color-mix(in srgb,var(--accent) 11%,transparent);box-shadow:0 0 0 .35em color-mix(in srgb,var(--accent) 11%,transparent);border-radius:3px;transition:background .4s,box-shadow .4s}
+  .narr{position:fixed;left:50%;bottom:max(.8rem,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:.3rem;
+        background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:.3rem .45rem;box-shadow:0 6px 22px rgba(0,0,0,.25);font-family:var(--sans);max-width:calc(100vw - 1rem)}
+  body.narrating .narr{display:flex}
+  .narr button{min-width:2.6rem;height:2.6rem;padding:0 .5rem;display:inline-grid;place-items:center;font-size:.85rem;font-variant-numeric:tabular-nums}
+  .narr #nPlay{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+  .narr .sep{width:1px;align-self:stretch;background:var(--rule);margin:0 .15rem}
+  .narr .msg{font-size:.78rem;color:var(--muted);padding:0 .5rem;max-width:12rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .narr .msg:empty{display:none}
+  body.narrating .toast{bottom:5.2rem}
+  body.narrating .pager{padding-bottom:7rem}
+  #settings select{font:inherit;font-size:.82rem;padding:.3rem;border:1px solid var(--rule);border-radius:6px;background:var(--card);color:var(--fg);width:100%}
+  #settings .sub{border-top:1px solid var(--rule);margin-top:.4rem;padding-top:.5rem}
+  @media (max-width:520px){ .narr{gap:.15rem;padding:.25rem .3rem} .narr button{min-width:2.75rem;height:2.75rem} .narr .msg{display:none} }
 </style>
 </head>
 <body>
@@ -109,6 +127,7 @@
   <div class="bar">
     <h1 id="t">Movimiento es vida</h1>
     <span class="prog" id="prog" aria-live="polite"></span>
+    <button id="listen" class="icon" hidden aria-pressed="false" aria-label="Escuchar capítulo" title="Escuchar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg></button>
     <button id="tocbtn" class="icon" aria-expanded="false" aria-controls="toc" aria-label="Índice de capítulos" title="Índice">☰</button>
     <button id="setbtn" class="icon" aria-expanded="false" aria-controls="settings" aria-label="Ajustes de lectura" title="Ajustes de lectura">Aa</button>
   </div>
@@ -138,9 +157,21 @@
   <label class="row"><span class="lab">Entre párrafos</span><input type="range" data-k="pgap" min="0" max="1.6" step="0.1"></label>
   <label class="row"><span class="lab">Márgenes</span><input type="range" data-k="pad" min="0.75" max="4" step="0.25"></label>
   <label class="row chk"><input type="checkbox" data-k="follow"><span>Seguir: abrir automáticamente cada capítulo nuevo</span></label>
+  <div class="row sub" id="narrSet" hidden><span class="tt" style="padding:0">Narrador</span>
+    <label class="lab" for="voice">Voz</label><select id="voice" aria-label="Voz del narrador"></select></div>
+  <label class="row chk" id="narrContRow" hidden><input type="checkbox" data-k="narrCont"><span>Continuar al siguiente capítulo al terminar</span></label>
   <div class="row"><button id="reset">Restablecer</button></div>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg">Nuevo capítulo disponible</span><button class="go" id="toastGo">Ir</button><button class="icon" id="toastX" aria-label="Cerrar aviso">×</button></div>
+<div class="narr" id="narr" role="toolbar" aria-label="Narrador">
+  <button id="nPrev" aria-label="Párrafo anterior" title="Párrafo anterior">⏮︎</button>
+  <button id="nPlay" aria-label="Pausar" title="Reproducir / pausar">❚❚</button>
+  <button id="nNext" aria-label="Párrafo siguiente" title="Párrafo siguiente">⏭︎</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button id="nRate" aria-label="Velocidad 1.0x" title="Velocidad">1.0×</button>
+  <button id="nStop" aria-label="Detener narración" title="Detener">■</button>
+  <span class="msg" id="nMsg" role="status" aria-live="polite"></span>
+</div>
 <script>
 (() => {
   "use strict";
@@ -249,7 +280,7 @@
       this.idx = i;
       UI.renderSheet();
       if (changed) { const el = this.cur ? $("sheet") : $("cover"); el.classList.remove("t-next", "t-prev"); void el.offsetWidth; el.classList.add(dir); }
-      if (!opts.keepScroll) scrollTo({ top: 0 });
+      if (!opts.keepScroll && !opts.narr) scrollTo({ top: 0 });
       if (changed && !opts.silent) UI.focusSheet();
       if (this.cur) Store.save();
     },
@@ -265,7 +296,8 @@
     save() {
       const s = Nav.cur; if (!s) return;
       const h = document.documentElement.scrollHeight - innerHeight;
-      try { localStorage.setItem(this.key, JSON.stringify({ seq: s.seq, title: s.title, y: Math.round(scrollY), r: h > 0 ? +(scrollY / h).toFixed(4) : 0, at: Date.now() })); } catch {}
+      const para = window.__narrPara ? window.__narrPara(s.seq) : null;
+      try { localStorage.setItem(this.key, JSON.stringify({ seq: s.seq, title: s.title, para, y: Math.round(scrollY), r: h > 0 ? +(scrollY / h).toFixed(4) : 0, at: Date.now() })); } catch {}
     },
   };
   let saveT = 0;
@@ -370,7 +402,7 @@
 
   /* ===== Preferencias ===== */
   const Prefs = {
-    defaults: { theme: "dark", font: "serif", align: "justify", fs: 1, measure: 38, lh: 1.7, pgap: 1, pad: 1.25, follow: false },
+    defaults: { theme: "dark", font: "serif", align: "justify", fs: 1, measure: 38, lh: 1.7, pgap: 1, pad: 1.25, follow: false, narrCont: true, narrRate: 1, narrVoice: "" },
     key: "mev-reader:prefs:" + slug,
     v: null,
     load() {
@@ -446,7 +478,7 @@
         const y = scrollY;
         Nav.idx = i; UI.renderSheet(); scrollTo({ top: y });
         const fresh = ch.added.map((q) => Nav.sheets.find((s) => s.seq === q)).filter(Boolean);
-        if (fresh.length) { if (Prefs.v.follow) Nav.goSeq(fresh[0].seq); else UI.toast(fresh[0].seq); }
+        if (fresh.length) { if (Prefs.v.follow && !Narr.on) Nav.goSeq(fresh[0].seq); else UI.toast(fresh[0].seq); }
       }
     }
     const n = Nav.sheets.length;
@@ -465,7 +497,232 @@
     $("cover").appendChild(f);
     return;
   }
-  window.__mev = { Content, Nav, UI };
+  /* ===== Narrador (Web Speech API: speechSynthesis) ===== */
+  // Texto limpio para voz: sin markdown, sin «» ni comillas, guiones de diálogo convertidos en pausas.
+  function cleanSpeech(t) {
+    return String(t)
+      .replace(/[*_#>`~|]+/g, " ")
+      .replace(/[«»“”"„]/g, "")
+      .replace(/(^|\n)\s*[—–―-]\s*/g, "$1")
+      .replace(/\s*[—–―]\s*(?=[.,;:!?…)]|$)/g, "")
+      .replace(/\s*[—–―]\s*/g, ", ")
+      .replace(/\.{3,}/g, "…")
+      .replace(/\s+/g, " ")
+      .replace(/([?!…])\s*,\s*/g, "$1 ")
+      .replace(/\s+([,.;:!?…)])/g, "$1")
+      .replace(/,(\s*,)+/g, ",").replace(/,\s*([.;:!?…])/g, "$1")
+      .replace(/([¿¡(])\s+/g, "$1")
+      .replace(/^[\s,.;:]+/, "")
+      .trim();
+  }
+  // Trocea en utterances de <= max caracteres: por frases, luego comas, luego palabras.
+  function chunkSpeech(t, max = 200) {
+    t = String(t).trim(); if (!t) return [];
+    const out = []; let cur = "";
+    const push = (piece) => {
+      piece = piece.trim(); if (!piece) return;
+      if (piece.length > max) {
+        const sub = piece.includes(",") ? piece.split(/(?<=,)\s+/) : piece.split(/\s+/);
+        if (sub.length > 1) return sub.forEach(push);
+        for (let i = 0; i < piece.length; i += max) push(piece.slice(i, i + max));
+        return;
+      }
+      if (!cur) cur = piece;
+      else if (cur.length + 1 + piece.length <= max) cur += " " + piece;
+      else { out.push(cur); cur = piece; }
+    };
+    (t.match(/[^.!?…;:]+(?:[.!?…;:]+|$)\s*/g) || [t]).forEach(push);
+    if (cur) out.push(cur);
+    return out;
+  }
+  window.__mevNarr = { cleanSpeech, chunkSpeech };
+
+  const synth = window.speechSynthesis, SUP = !!(synth && window.SpeechSynthesisUtterance);
+  const UA = navigator.userAgent, IS_ANDROID = /Android/i.test(UA), IS_IOS = /iP(hone|ad|od)/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const RATES = [0.8, 0.9, 1, 1.1, 1.2, 1.4, 1.6];
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  const Narr = {
+    on: false, paused: false, seq: null, pi: 0, ci: 0, chunks: [], token: 0, voices: [], internal: false, retries: 0, wd: 0, ka: 0,
+    els() { return [...$("sheet").querySelectorAll(":scope > h2, :scope > h3, :scope > p:not(.num):not(.end), :scope > blockquote")]; },
+    voice() { return this.voices.find((v) => v.voiceURI === Prefs.v.narrVoice) || this.voices[0] || null; },
+    loadVoices() {
+      if (!SUP) return;
+      const score = (v) => (/^es[-_]ES/i.test(v.lang) ? 3 : /^es[-_](MX|US|419)/i.test(v.lang) ? 2 : 1) +
+        (/(enhanced|premium|mejorad|natural|neural|online)/i.test(v.name) ? 4 : 0) + (/google/i.test(v.name) ? 2 : 0) + (v.localService ? 1 : 0);
+      this.voices = synth.getVoices().filter((v) => /^es([-_]|$)/i.test(v.lang)).sort((a, b) => score(b) - score(a));
+      const sel = $("voice"); sel.textContent = "";
+      for (const v of this.voices) { const o = document.createElement("option"); o.value = v.voiceURI; o.textContent = v.name + " (" + v.lang + ")"; sel.appendChild(o); }
+      if (!this.voices.length) { const o = document.createElement("option"); o.textContent = "Sin voces en español en este dispositivo"; sel.appendChild(o); sel.disabled = true; }
+      else { sel.disabled = false; sel.value = (this.voice() || {}).voiceURI || ""; }
+    },
+    msg(t) { $("nMsg").textContent = t || ""; },
+    ui() {
+      document.body.classList.toggle("narrating", this.on);
+      $("listen").setAttribute("aria-pressed", String(this.on));
+      const playing = this.on && !this.paused;
+      $("nPlay").textContent = playing ? "❚❚" : "▶︎"; $("nPlay").setAttribute("aria-label", playing ? "Pausar" : "Reanudar");
+      const r = Prefs.v.narrRate; $("nRate").textContent = r.toFixed(1) + "×"; $("nRate").setAttribute("aria-label", "Velocidad " + r.toFixed(1) + "x, cambiar");
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = !this.on ? "none" : playing ? "playing" : "paused";
+        if (this.on && Nav.cur) try { navigator.mediaSession.metadata = new MediaMetadata({ title: Nav.cur.title || "Capítulo " + (Nav.idx + 1), artist: Content.story.title || "Movimiento es vida", album: "Capítulo " + (Nav.idx + 1) + " de " + Nav.sheets.length }); } catch {}
+      }
+    },
+    highlight(scroll) {
+      $("sheet").querySelectorAll(".reading").forEach((e) => e.classList.remove("reading"));
+      if (!this.on || !Nav.cur || Nav.cur.seq !== this.seq) return;
+      const el = this.els()[this.pi]; if (!el) return;
+      el.classList.add("reading");
+      if (scroll) el.scrollIntoView({ block: "center", behavior: reduce.matches ? "auto" : "smooth" });
+    },
+    startFromView() {
+      const top = document.querySelector("header").getBoundingClientRect().bottom;
+      const els = this.els(), p = Store.load();
+      if (p && Nav.cur && p.seq === Nav.cur.seq && Number.isInteger(p.para) && els[p.para]) {
+        const r = els[p.para].getBoundingClientRect(); if (r.bottom > top && r.top < innerHeight) return p.para;
+      }
+      if (scrollY < 40) return 0;
+      const i = els.findIndex((e) => e.getBoundingClientRect().bottom > top + 8); return i < 0 ? 0 : i;
+    },
+    start(pi) {
+      if (!SUP) return;
+      if (!this.voices.length) this.loadVoices();
+      if (!this.voices.length) { this.on = true; this.paused = true; this.ui(); this.msg("No hay voces en español en este dispositivo"); return; }
+      if (!Nav.cur) { const p = Store.load(), i = p ? Nav.sheets.findIndex((s) => s.seq === p.seq) : -1; this.internal = true; Nav.go(i >= 0 ? i : 0, { silent: true }); this.internal = false; pi = i >= 0 && Number.isInteger(p.para) ? p.para : 0; }
+      this.on = true; this.paused = false; this.seq = Nav.cur.seq; this.pi = pi ?? this.startFromView(); this.ci = 0;
+      Keep.play(); this.msg(""); this.ui(); this.speakPara();
+    },
+    stop(note) {
+      this.token++; this.on = false; this.paused = false; clearTimeout(this.wd); clearInterval(this.ka);
+      if (SUP) synth.cancel(); Keep.stop(); this.highlight(); this.msg(note || ""); this.ui(); Store.save();
+    },
+    pause() { if (!this.on || this.paused) return; this.token++; this.paused = true; clearTimeout(this.wd); synth.cancel(); Keep.pause(); this.ui(); Store.save(); },
+    resume() { if (!this.on) return this.start(); if (!this.paused) return; this.paused = false; Keep.play(); this.msg(""); this.ui(); this.speakChunk(); },
+    toggle() { this.on && !this.paused ? this.pause() : this.resume(); },
+    jump(d) {
+      if (!this.on) return;
+      const els = this.els(); let i = this.pi + d;
+      if (i < 0) { if (Nav.idx > 0 && this.ci === 0) { this.internal = true; Nav.go(Nav.idx - 1, { silent: true, narr: true }); this.internal = false; this.seq = Nav.cur.seq; i = Math.max(0, this.els().length - 1); this.ui(); } else i = 0; }
+      if (i >= els.length && Nav.cur.seq === this.seq) return this.sheetEnd();
+      this.token++; synth.cancel(); this.pi = i; this.ci = 0;
+      if (this.paused) { this.highlight(true); this.chunks = []; Store.save(); return; }
+      this.speakPara();
+    },
+    speakPara() {
+      const tok = ++this.token, els = this.els();
+      if (this.pi >= els.length) return this.sheetEnd();
+      this.chunks = chunkSpeech(cleanSpeech(els[this.pi].innerText || els[this.pi].textContent));
+      if (!this.chunks.length) { this.pi++; return this.speakPara(); }
+      this.ci = 0; this.highlight(true); Store.save();
+      this.speakChunk(tok);
+    },
+    speakChunk(tok) {
+      if (!this.on || this.paused) return;
+      if (!this.chunks.length || this.ci >= this.chunks.length) return this.speakPara();
+      tok = ++this.token;
+      const text = this.chunks[this.ci], u = new SpeechSynthesisUtterance(text), v = this.voice();
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "es-ES";
+      u.rate = Prefs.v.narrRate; u.pitch = 1;
+      let done = false;
+      const fin = () => {
+        if (done || tok !== this.token) return; done = true; clearTimeout(this.wd); this.retries = 0;
+        this.ci++;
+        if (this.ci < this.chunks.length) this.speakChunk();
+        else { this.pi++; const t2 = this.token; setTimeout(() => { if (t2 === this.token && this.on && !this.paused) this.speakPara(); }, Math.round(450 / Prefs.v.narrRate)); }
+      };
+      u.onend = fin;
+      u.onerror = (e) => {
+        if (tok !== this.token || done || e.error === "interrupted" || e.error === "canceled") return;
+        done = true; clearTimeout(this.wd);
+        if (e.error === "not-allowed") { this.paused = true; this.ui(); this.msg("Toca ▶ para empezar"); return; }
+        if (this.retries++ < 2) setTimeout(() => tok === this.token && this.speakChunk(), 400); else { this.retries = 0; done = false; fin(); }
+      };
+      synth.cancel(); // limpia colas atascadas (Chrome)
+      synth.speak(u);
+      // Watchdog: si el motor se queda colgado sin disparar onend, reintenta o avanza.
+      const budget = 4000 + (text.length * 95) / Prefs.v.narrRate;
+      clearTimeout(this.wd);
+      this.wd = setTimeout(() => { if (tok !== this.token || done) return; if (!synth.speaking) { done = true; this.speakChunk(); } else this.wd = setTimeout(() => { if (tok === this.token && !done) { done = true; fin(); } }, budget); }, budget);
+      // Keep-alive: Chrome de escritorio corta la síntesis ~15 s; pause/resume periódico la mantiene viva
+      // (en Android/iOS ese truco rompe la cola, ahí nos basta con utterances cortos).
+      clearInterval(this.ka);
+      if (!IS_ANDROID && !IS_IOS) this.ka = setInterval(() => { if (synth.speaking && !synth.paused && this.on && !this.paused) { synth.pause(); synth.resume(); } }, 10000);
+    },
+    sheetEnd() {
+      const tok = ++this.token;
+      const nx = Nav.sheets[Nav.idx + 1];
+      if (Prefs.v.narrCont && nx) {
+        this.internal = true; Nav.go(Nav.idx + 1, { silent: true, narr: true }); this.internal = false;
+        this.seq = Nav.cur.seq; this.pi = 0; this.ci = 0; this.ui(); this.speakPara(); return;
+      }
+      const note = nx ? "Fin del capítulo." : "Fin de los capítulos publicados.";
+      this.highlight(); this.pi = Math.max(0, this.els().length - 1);
+      const u = new SpeechSynthesisUtterance(note), v = this.voice(); if (v) { u.voice = v; u.lang = v.lang; } u.rate = Prefs.v.narrRate;
+      u.onend = u.onerror = () => { if (tok === this.token) this.stop(note); };
+      synth.cancel(); synth.speak(u);
+      this.msg(note); setTimeout(() => { if (tok === this.token && this.on) this.stop(note); }, 6000);
+    },
+  };
+  window.__narrPara = (seq) => (Narr.on && Narr.seq === seq ? Narr.pi : null);
+
+  // Keep: audio silencioso en bucle para que Android/iOS muestren controles multimedia (Media Session)
+  // y para mantener viva la sesión de audio; best effort.
+  const Keep = {
+    a: null,
+    el() {
+      if (this.a) return this.a;
+      const sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), d = new DataView(buf), w = (o, s) => [...s].forEach((c, i) => d.setUint8(o + i, c.charCodeAt(0)));
+      w(0, "RIFF"); d.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+      d.setUint32(24, sr, true); d.setUint32(28, sr * 2, true); d.setUint16(32, 2, true); d.setUint16(34, 16, true); w(36, "data"); d.setUint32(40, n * 2, true);
+      this.a = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/wav" }))); this.a.loop = true; this.a.volume = 0.01; this.a.setAttribute("playsinline", "");
+      return this.a;
+    },
+    play() { try { const p = this.el().play(); p && p.catch(() => {}); } catch {} },
+    pause() { try { this.a && this.a.pause(); } catch {} },
+    stop() { this.pause(); },
+  };
+
+  if (SUP) {
+    $("listen").hidden = false; $("narrSet").hidden = false; $("narrContRow").hidden = false;
+    Narr.loadVoices(); synth.addEventListener ? synth.addEventListener("voiceschanged", () => Narr.loadVoices()) : (synth.onvoiceschanged = () => Narr.loadVoices());
+    $("listen").onclick = () => (Narr.on ? Narr.stop() : Narr.start());
+    $("nPlay").onclick = () => Narr.toggle();
+    $("nPrev").onclick = () => Narr.jump(-1);
+    $("nNext").onclick = () => Narr.jump(1);
+    $("nStop").onclick = () => { Narr.stop(); $("listen").focus(); };
+    $("nRate").onclick = () => {
+      const i = RATES.findIndex((r) => Math.abs(r - Prefs.v.narrRate) < 0.01); Prefs.set("narrRate", RATES[(i + 1) % RATES.length]); Narr.ui();
+      if (Narr.on && !Narr.paused) { Narr.token++; synth.cancel(); Narr.speakChunk(); } // reanuda el trozo actual a la nueva velocidad
+    };
+    $("voice").onchange = (e) => { Prefs.set("narrVoice", e.target.value); if (Narr.on && !Narr.paused) { Narr.token++; synth.cancel(); Narr.speakChunk(); } };
+    // Tocar un párrafo mientras se narra reubica la narración allí.
+    $("sheet").addEventListener("click", (e) => {
+      if (!Narr.on || getSelection().toString()) return;
+      const i = Narr.els().findIndex((el) => el.contains(e.target)); if (i < 0) return;
+      Narr.pi = i + 0; Narr.ci = 0; Narr.token++; synth.cancel(); Narr.paused ? (Narr.highlight(true), Store.save()) : Narr.speakPara();
+    });
+    // Cambio manual de hoja: portada => detener; otra hoja => seguir narrando desde su inicio.
+    const go0 = Nav.go.bind(Nav);
+    Nav.go = (i, opts = {}) => {
+      const before = Nav.cur ? Nav.cur.seq : null; go0(i, opts);
+      if (!Narr.on || Narr.internal) return;
+      if (!Nav.cur) return Narr.stop();
+      if (Nav.cur.seq !== before) { Narr.seq = Nav.cur.seq; Narr.pi = 0; Narr.ci = 0; Narr.ui(); Narr.paused ? (Narr.token++, synth.cancel(), Narr.highlight(), Narr.chunks = []) : (synth.cancel(), Narr.speakPara()); }
+    };
+    // Re-render (edición en vivo, escena nueva): no interrumpir, solo reaplicar el resaltado.
+    const rs0 = UI.renderSheet.bind(UI);
+    UI.renderSheet = () => { rs0(); if (Narr.on) { if (Nav.cur && Nav.cur.seq === Narr.seq && Narr.pi >= Narr.els().length) Narr.pi = Narr.els().length - 1; Narr.highlight(false); } };
+    if ("mediaSession" in navigator) {
+      const ms = navigator.mediaSession, h = (a, f) => { try { ms.setActionHandler(a, f); } catch {} };
+      h("play", () => Narr.resume()); h("pause", () => Narr.pause()); h("stop", () => Narr.stop());
+      h("nexttrack", () => Narr.jump(1)); h("previoustrack", () => Narr.jump(-1));
+    }
+    // iOS puede suspender la síntesis al bloquear: al volver, si debía sonar y no suena, reanuda el trozo.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && Narr.on && !Narr.paused) setTimeout(() => { if (!synth.speaking && !synth.pending) { Narr.token++; Narr.speakChunk(); } else if (synth.paused) synth.resume(); }, 600);
+    });
+    addEventListener("pagehide", () => synth.cancel());
+  }
+  window.__mev = { Content, Nav, UI, Narr };
   Content.tick();
   setInterval(() => Content.tick(), POLL_MS);
 })();
