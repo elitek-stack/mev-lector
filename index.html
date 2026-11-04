@@ -73,6 +73,16 @@
   #tocl li.brk{padding:.6rem 1rem .2rem;color:var(--muted);font-style:italic;font-size:.85rem}
   #tocl button:hover{background:var(--rule)}
   #tocl li.cur button{color:var(--accent);box-shadow:inset 2px 0 0 var(--accent)}
+  #settings{width:min(20rem,calc(100vw - 1.5rem));padding:.5rem 0 .8rem}
+  #settings .row{display:flex;flex-direction:column;gap:.35rem;padding:.45rem 1rem;font-size:.82rem;color:var(--fg)}
+  #settings .row.chk{flex-direction:row;align-items:flex-start;gap:.5rem;color:var(--muted)}
+  #settings .lab{color:var(--muted);font-size:.72rem;letter-spacing:.04em}
+  #settings input[type=range]{width:100%;accent-color:var(--accent)}
+  #settings input[type=checkbox]{accent-color:var(--accent);margin-top:.15rem}
+  .seg{display:flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden}
+  .seg button{flex:1;border:0;border-radius:0;padding:.35rem .4rem;font-size:.8rem}
+  .seg button+button{border-left:1px solid var(--rule)}
+  .seg button[aria-checked=true]{background:var(--accent);color:var(--bg)}
   .toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:6;background:var(--card);color:var(--fg);border:1px solid var(--rule);
          border-radius:999px;padding:.4rem .5rem .4rem 1rem;font-family:var(--sans);font-size:.85rem;box-shadow:0 6px 22px rgba(0,0,0,.25);
          display:none;align-items:center;gap:.6rem;max-width:calc(100vw - 2rem)}
@@ -87,7 +97,7 @@
     <h1 id="t">Movimiento es vida</h1>
     <span class="prog" id="prog" aria-live="polite"></span>
     <button id="tocbtn" class="icon" aria-expanded="false" aria-controls="toc" aria-label="Índice de capítulos" title="Índice">☰</button>
-    <button id="theme" class="icon" aria-label="Cambiar tema claro u oscuro" title="Tema">◐</button>
+    <button id="setbtn" class="icon" aria-expanded="false" aria-controls="settings" aria-label="Ajustes de lectura" title="Ajustes de lectura">Aa</button>
   </div>
 </header>
 <main id="main">
@@ -101,6 +111,22 @@
 </nav>
 <p class="status" id="status"><span class="dot" id="dot"></span><span id="st">Conectando…</span></p>
 <nav class="panel" id="toc" aria-label="Índice de capítulos"><div class="tt">Índice</div><ol id="tocl"></ol></nav>
+<section class="panel" id="settings" role="dialog" aria-label="Ajustes de lectura">
+  <div class="tt">Ajustes de lectura</div>
+  <div class="row"><span class="lab" id="l-theme">Tema</span><div class="seg" role="radiogroup" aria-labelledby="l-theme" data-k="theme">
+    <button role="radio" data-v="light">Claro</button><button role="radio" data-v="sepia">Papel</button><button role="radio" data-v="dark">Oscuro</button></div></div>
+  <div class="row"><span class="lab" id="l-font">Tipografía</span><div class="seg" role="radiogroup" aria-labelledby="l-font" data-k="font">
+    <button role="radio" data-v="serif" style="font-family:var(--serif)">Serif</button><button role="radio" data-v="sans">Sans</button></div></div>
+  <div class="row"><span class="lab" id="l-align">Alineación</span><div class="seg" role="radiogroup" aria-labelledby="l-align" data-k="align">
+    <button role="radio" data-v="justify">Justificado</button><button role="radio" data-v="left">Izquierda</button></div></div>
+  <label class="row"><span class="lab">Tamaño</span><input type="range" data-k="fs" min="0.8" max="1.5" step="0.05"></label>
+  <label class="row"><span class="lab">Ancho de columna</span><input type="range" data-k="measure" min="26" max="52" step="1"></label>
+  <label class="row"><span class="lab">Interlineado</span><input type="range" data-k="lh" min="1.35" max="2.2" step="0.05"></label>
+  <label class="row"><span class="lab">Entre párrafos</span><input type="range" data-k="pgap" min="0" max="1.6" step="0.1"></label>
+  <label class="row"><span class="lab">Márgenes</span><input type="range" data-k="pad" min="0.75" max="4" step="0.25"></label>
+  <label class="row chk"><input type="checkbox" data-k="follow"><span>Seguir: abrir automáticamente cada capítulo nuevo</span></label>
+  <div class="row"><button id="reset">Restablecer</button></div>
+</section>
 <div class="toast" id="toast" role="status"><span id="toastMsg">Nuevo capítulo disponible</span><button class="go" id="toastGo">Ir</button><button class="icon" id="toastX" aria-label="Cerrar aviso">×</button></div>
 <script>
 (() => {
@@ -317,23 +343,53 @@
   const toc = $("toc");
   function setToc(open) {
     toc.classList.toggle("open", open); $("tocbtn").setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) { UI.markToc(); (toc.querySelector("li.cur button") || toc.querySelector("button"))?.focus(); toc.querySelector("li.cur")?.scrollIntoView({ block: "nearest" }); }
+    if (open) { setSettings(false); UI.markToc(); (toc.querySelector("li.cur button") || toc.querySelector("button"))?.focus(); toc.querySelector("li.cur")?.scrollIntoView({ block: "nearest" }); }
   }
   $("tocbtn").onclick = (e) => { e.stopPropagation(); setToc(!toc.classList.contains("open")); };
   document.addEventListener("click", (e) => { if (!toc.contains(e.target) && e.target !== $("tocbtn")) setToc(false); });
 
-  // Tema
-  const savedTheme = localStorage.getItem("mev-reader-theme");
-  if (savedTheme) root.dataset.theme = savedTheme;
-  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; localStorage.setItem("mev-reader-theme", root.dataset.theme); };
+  /* ===== Preferencias ===== */
+  const Prefs = {
+    defaults: { theme: "dark", font: "serif", align: "justify", fs: 1, measure: 38, lh: 1.7, pgap: 1, pad: 1.25, follow: false },
+    key: "mev-reader:prefs:" + slug,
+    v: null,
+    load() {
+      let p = null;
+      try { p = JSON.parse(localStorage.getItem(this.key) || localStorage.getItem("mev-reader:prefs") || "null"); } catch {}
+      if (!p) { p = {}; const t = localStorage.getItem("mev-reader-theme"); if (t) p.theme = t; } // migración del lector anterior
+      this.v = { ...this.defaults, ...p };
+      this.apply();
+    },
+    set(k, val) { this.v[k] = val; this.apply(); try { const j = JSON.stringify(this.v); localStorage.setItem(this.key, j); localStorage.setItem("mev-reader:prefs", j); } catch {} },
+    apply() {
+      const v = this.v, st = root.style;
+      root.dataset.theme = v.theme;
+      st.setProperty("--font", v.font === "sans" ? "var(--sans)" : "var(--serif)");
+      st.setProperty("--align", v.align); st.setProperty("--fs", v.fs); st.setProperty("--measure", v.measure + "rem");
+      st.setProperty("--lh", v.lh); st.setProperty("--pgap", v.pgap + "em"); st.setProperty("--pad", v.pad + "rem");
+      document.querySelector('meta[name=theme-color]').content = getComputedStyle(root).getPropertyValue("--bg").trim() || "#121614";
+      document.querySelectorAll("#settings .seg").forEach((g) => g.querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(v[g.dataset.k] === b.dataset.v))));
+      document.querySelectorAll("#settings input[type=range]").forEach((i) => { i.value = v[i.dataset.k]; i.setAttribute("aria-valuetext", String(v[i.dataset.k])); });
+      document.querySelectorAll("#settings input[type=checkbox]").forEach((i) => i.checked = !!v[i.dataset.k]);
+    },
+  };
+  Prefs.load();
+  document.querySelectorAll("#settings .seg").forEach((g) => g.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) Prefs.set(g.dataset.k, b.dataset.v); }));
+  document.querySelectorAll("#settings input[type=range]").forEach((i) => i.addEventListener("input", () => Prefs.set(i.dataset.k, Number(i.value))));
+  document.querySelectorAll("#settings input[type=checkbox]").forEach((i) => i.addEventListener("change", () => Prefs.set(i.dataset.k, i.checked)));
+  $("reset").onclick = () => { Prefs.v = { ...Prefs.defaults }; Prefs.set("theme", Prefs.v.theme); };
+  const sett = $("settings");
+  function setSettings(open) { sett.classList.toggle("open", open); $("setbtn").setAttribute("aria-expanded", String(open)); if (open) { setToc(false); sett.querySelector("button,input").focus(); } }
+  $("setbtn").onclick = (e) => { e.stopPropagation(); setSettings(!sett.classList.contains("open")); };
+  document.addEventListener("click", (e) => { if (!sett.contains(e.target) && e.target !== $("setbtn")) setSettings(false); });
 
   // Navegación: botones, teclado, swipe
   $("prev").onclick = () => Nav.prev();
   $("next").onclick = () => Nav.next();
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { setToc(false); return; }
+    if (e.key === "Escape") { if (toc.classList.contains("open")) { setToc(false); $("tocbtn").focus(); } if (sett.classList.contains("open")) { setSettings(false); $("setbtn").focus(); } return; }
     if (e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
-    if (toc.classList.contains("open")) return;
+    if (toc.classList.contains("open") || sett.classList.contains("open")) return;
     if (e.key === "ArrowRight") { e.preventDefault(); Nav.next(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); Nav.prev(); }
   });
@@ -370,7 +426,7 @@
         const y = scrollY;
         Nav.idx = i; UI.renderSheet(); scrollTo({ top: y });
         const fresh = ch.added.map((q) => Nav.sheets.find((s) => s.seq === q)).filter(Boolean);
-        if (fresh.length) UI.toast(fresh[0].seq);
+        if (fresh.length) { if (Prefs.v.follow) Nav.goSeq(fresh[0].seq); else UI.toast(fresh[0].seq); }
       }
     }
     const n = Nav.sheets.length;
