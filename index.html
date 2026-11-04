@@ -58,6 +58,19 @@
         padding:.45rem 1rem;font-size:.85rem;box-shadow:0 4px 18px rgba(0,0,0,.2);display:none}
   .pill:hover{color:#fff}
   .pill.show{display:block}
+  /* Menú de capítulos */
+  article{scroll-margin-top:4.5rem}
+  #toc{position:fixed;top:3.2rem;right:max(.75rem,calc((100vw - var(--measure))/2));z-index:3;width:min(20rem,calc(100vw - 1.5rem));
+       max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--rule);border-radius:10px;
+       box-shadow:0 8px 28px rgba(0,0,0,.25);padding:.5rem 0;display:none}
+  #toc.open{display:block}
+  #toc .tt{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);padding:.3rem 1rem .5rem}
+  #toc ol{list-style:none;margin:0;padding:0}
+  #toc li button{display:block;width:100%;text-align:left;border:0;border-radius:0;padding:.45rem 1rem;font-size:.9rem;color:var(--fg);line-height:1.35}
+  #toc li.brk button{font-style:italic;color:var(--muted)}
+  #toc li button:hover{background:var(--rule)}
+  @media (max-width:520px){.bar .chap{display:none}.bar{gap:.45rem}}
+  #toc li.cur button{color:var(--accent);box-shadow:inset 2px 0 0 var(--accent)}
 </style>
 </head>
 <body>
@@ -65,6 +78,7 @@
   <div class="bar">
     <h1 id="t">Movimiento es vida</h1>
     <span class="chap" id="c"></span>
+    <button id="tocbtn" aria-expanded="false" aria-controls="toc" title="Índice de capítulos">Capítulos</button>
     <button id="follow" title="Desplazarse automáticamente a cada escena nueva">Seguir: sí</button>
     <button id="theme" title="Modo claro / oscuro">◐</button>
   </div>
@@ -74,6 +88,7 @@
   <div id="scenes"></div>
   <p class="status" id="status"><span class="dot" id="dot"></span><span id="st">Conectando…</span></p>
 </main>
+<nav id="toc" aria-label="Capítulos"><div class="tt">Capítulos</div><ol id="tocl"></ol></nav>
 <button class="pill" id="pill">Escena nueva ↓</button>
 <script>
 (() => {
@@ -123,6 +138,7 @@
     const a = document.createElement("article");
     a.className = s.kind || "scene";
     a.dataset.seq = s.seq;
+    a.id = "escena-" + s.seq;
     a.innerHTML = (s.title ? "<h3>" + inline(s.title) + "</h3>" : "") + md(s.content_md || "");
     return a;
   }
@@ -156,6 +172,7 @@
       if (!first) first = el;
       lastSeq = Math.max(lastSeq, s.seq);
     }
+    buildToc();
     if (animate && first) {
       requestAnimationFrame(() => list.querySelectorAll("article.enter").forEach((e) => e.classList.remove("enter")));
       if (follow || nearBottom()) first.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -195,6 +212,33 @@
       else status("Sin conexión, reintentando…", false);
     } finally { busy = false; }
   }
+
+  // ---- menú de capítulos ----
+  const toc = $("toc"), tocl = $("tocl");
+  const setToc = (open) => { toc.classList.toggle("open", open); $("tocbtn").setAttribute("aria-expanded", open ? "true" : "false"); if (open) markCur(); };
+  $("tocbtn").onclick = (e) => { e.stopPropagation(); setToc(!toc.classList.contains("open")); };
+  document.addEventListener("click", (e) => { if (!toc.contains(e.target)) setToc(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setToc(false); });
+  function buildToc() {
+    tocl.textContent = "";
+    list.querySelectorAll("article[data-seq]").forEach((a, i) => {
+      const li = document.createElement("li"), b = document.createElement("button");
+      const h = a.querySelector(":scope > h3");
+      b.textContent = (h && h.textContent.trim()) || "Escena " + (i + 1);
+      li.dataset.seq = a.dataset.seq;
+      if (a.classList.contains("chapter_break")) li.className = "brk";
+      b.onclick = () => { setToc(false); a.scrollIntoView({ behavior: "smooth", block: "start" }); };
+      li.appendChild(b); tocl.appendChild(li);
+    });
+    markCur();
+  }
+  function markCur() {
+    let cur = null;
+    for (const a of list.querySelectorAll("article[data-seq]")) { if (a.getBoundingClientRect().top <= 120) cur = a.dataset.seq; else break; }
+    tocl.querySelectorAll("li").forEach((li) => li.classList.toggle("cur", li.dataset.seq === cur));
+  }
+  let tocRaf = 0;
+  addEventListener("scroll", () => { if (!tocRaf) tocRaf = requestAnimationFrame(() => { tocRaf = 0; markCur(); }); }, { passive: true });
 
   $("pill").onclick = () => { $("pill").classList.remove("show"); list.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   addEventListener("scroll", () => { if (nearBottom()) $("pill").classList.remove("show"); }, { passive: true });
