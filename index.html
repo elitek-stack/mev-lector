@@ -83,6 +83,18 @@
   .seg button{flex:1;border:0;border-radius:0;padding:.35rem .4rem;font-size:.8rem}
   .seg button+button{border-left:1px solid var(--rule)}
   .seg button[aria-checked=true]{background:var(--accent);color:var(--bg)}
+  @keyframes inN{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+  @keyframes inP{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+  #sheet.t-next,.cover.t-next{animation:inN .35s ease-out}
+  #sheet.t-prev,.cover.t-prev{animation:inP .35s ease-out}
+  .hair{position:absolute;left:0;bottom:-1px;height:2px;background:var(--accent);opacity:.55;transition:width .4s ease}
+  .toast.show{animation:inN .3s ease-out}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+  @media (max-width:520px){
+    .panel{left:.5rem;right:.5rem;width:auto!important;top:auto;bottom:.5rem;max-height:75vh}
+    .pager{padding-bottom:2.5rem}
+    #sheet h2{font-size:1.3em}
+  }
   .toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:6;background:var(--card);color:var(--fg);border:1px solid var(--rule);
          border-radius:999px;padding:.4rem .5rem .4rem 1rem;font-family:var(--sans);font-size:.85rem;box-shadow:0 6px 22px rgba(0,0,0,.25);
          display:none;align-items:center;gap:.6rem;max-width:calc(100vw - 2rem)}
@@ -93,6 +105,7 @@
 </head>
 <body>
 <header>
+  <div class="hair" id="hair" aria-hidden="true"></div>
   <div class="bar">
     <h1 id="t">Movimiento es vida</h1>
     <span class="prog" id="prog" aria-live="polite"></span>
@@ -105,7 +118,7 @@
     <div class="actions" id="coverActions"></div></section>
   <article id="sheet" tabindex="-1" aria-live="off"></article>
 </main>
-<nav class="pager" aria-label="Paginación">
+<nav class="pager" aria-label="Navegación entre capítulos">
   <button id="prev" aria-label="Capítulo anterior">← Anterior</button>
   <button id="next" aria-label="Capítulo siguiente">Siguiente →</button>
 </nav>
@@ -127,7 +140,7 @@
   <label class="row chk"><input type="checkbox" data-k="follow"><span>Seguir: abrir automáticamente cada capítulo nuevo</span></label>
   <div class="row"><button id="reset">Restablecer</button></div>
 </section>
-<div class="toast" id="toast" role="status"><span id="toastMsg">Nuevo capítulo disponible</span><button class="go" id="toastGo">Ir</button><button class="icon" id="toastX" aria-label="Cerrar aviso">×</button></div>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg">Nuevo capítulo disponible</span><button class="go" id="toastGo">Ir</button><button class="icon" id="toastX" aria-label="Cerrar aviso">×</button></div>
 <script>
 (() => {
   "use strict";
@@ -232,9 +245,10 @@
     go(i, opts = {}) {
       if (!this.sheets.length) return;
       i = Math.max(-1, Math.min(this.sheets.length - 1, i));
-      const changed = i !== this.idx;
+      const changed = i !== this.idx, dir = i > this.idx ? "t-next" : "t-prev";
       this.idx = i;
       UI.renderSheet();
+      if (changed) { const el = this.cur ? $("sheet") : $("cover"); el.classList.remove("t-next", "t-prev"); void el.offsetWidth; el.classList.add(dir); }
       if (!opts.keepScroll) scrollTo({ top: 0 });
       if (changed && !opts.silent) UI.focusSheet();
       if (this.cur) Store.save();
@@ -269,6 +283,7 @@
     renderSheet() {
       const s = Nav.cur, sheet = $("sheet"), n = Nav.sheets.length;
       $("cover").hidden = !!s;
+      $("sheet").classList.remove("t-next", "t-prev"); $("cover").classList.remove("t-next", "t-prev");
       if (!s) {
         sheet.innerHTML = ""; sheet.className = "";
         $("prog").textContent = n ? n + (n === 1 ? " capítulo" : " capítulos") : "";
@@ -285,10 +300,13 @@
       const p = Nav.sheets[Nav.idx - 1], nx = Nav.sheets[Nav.idx + 1];
       $("prev").disabled = Nav.idx < 0;
       $("prev").textContent = "← " + (p ? p.title || "Anterior" : "Portada");
+      $("prev").setAttribute("aria-label", "Anterior: " + (p ? p.title || "capítulo anterior" : "portada"));
+      if (nx) $("next").setAttribute("aria-label", "Siguiente: " + (nx.title || "capítulo siguiente"));
       $("next").disabled = !nx;
       $("next").textContent = (nx ? nx.title || "Siguiente" : "") + " →";
       this.renderCover();
       this.markToc();
+      $("hair").style.width = n ? ((Nav.idx + 1) / n * 100) + "%" : "0";
     },
     renderCover() {
       const a = $("coverActions");
@@ -335,6 +353,8 @@
     status(text, live) { $("st").textContent = text; $("dot").className = "dot" + (live ? " live" : ""); },
     toast(seq) {
       UI.toastSeq = seq;
+      const s = Nav.sheets.find((x) => x.seq === seq);
+      $("toastMsg").textContent = "Nuevo capítulo disponible" + (s && s.title ? ": " + s.title : "");
       $("toast").classList.add("show");
     },
   };
