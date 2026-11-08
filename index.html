@@ -180,7 +180,7 @@
 
   /* ===== Contenido (API + polling) ===== */
   const API = "https://eiqhnyuibxqowqfbddgc.supabase.co/functions/v1/story-api/public_story";
-  const POLL_MS = 5000;
+  const POLL_MS = 60000;
   const qs = new URLSearchParams(location.search);
   const DEFAULT_SLUG = "movimiento-es-vida-e89c545a";
   const slug = (qs.get("s") || qs.get("slug") || location.hash.replace(/^#/, "") || DEFAULT_SLUG).trim().toLowerCase();
